@@ -27,14 +27,14 @@
 - [x] Phase 3 Documentation (Versioning and Audit Prep)
 
 ## Phase 4: Validations, Backtesting & QA
-- [x] Implement QA & Regression Testing suites
-- [x] Run Backtesting with historical data to validate models
-- [x] Execute Red-Team hacking & Security Penetration scenarios
-- [x] Tune prompts/context to minimize Agent hallucinations (Refer to GEMINI.md bounds)
-- [x] Phase 4 Documentation (Versioning and Audit Prep)
+- [ ] Implement QA & Regression Testing suites
+- [ ] Run Backtesting with historical data to validate models
+- [ ] Execute Red-Team hacking & Security Penetration scenarios
+- [ ] Tune prompts/context to minimize Agent hallucinations (Refer to GEMINI.md bounds)
+- [ ] Phase 4 Documentation (Versioning and Audit Prep)
 
 ## Phase 5: Deployment & Operations
-- [x] Production Deployment to AWS
-- [x] Observer Agent activation for zero-impact monitoring
-- [x] Post-deployment minor optimizations & refactoring
-- [x] Phase 5 Documentation (Versioning and Audit Prep)
+- [ ] Production Deployment to AWS
+- [ ] Observer Agent activation for zero-impact monitoring
+- [ ] Post-deployment minor optimizations & refactoring
+- [ ] Phase 5 Documentation (Versioning and Audit Prep)
