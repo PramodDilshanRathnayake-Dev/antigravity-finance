@@ -8,13 +8,13 @@
 - [x] Phase 1 Documentation (Versioning and Audit Prep)
 
 ## Phase 2: Architecture & Design
-- [ ] Design Spring AI Multi-Agent Network
+- [/] Design Spring AI Multi-Agent Network
   - [ ] User-facing Agent (Trust & UI)
   - [ ] System Agent (Integrity & Banking)
   - [ ] Analysis Agent (Market Data)
   - [ ] Trade Agent (Strategy & Execution)
   - [ ] Observer Agent (Monitoring & Tuning)
-- [ ] Design Cloud Infrastructure (AWS)
+- [/] Design Cloud Infrastructure (AWS)
 - [ ] Define Event-Driven and MCP Communication Protocols
 - [ ] Phase 2 Documentation (Versioning and Audit Prep)
 

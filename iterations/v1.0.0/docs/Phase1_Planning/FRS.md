@@ -8,7 +8,7 @@ Develop a secure, autonomous, multi-agent financial investing system using **Jav
 
 ## User Review Required
 > [!IMPORTANT]
-> Please review the updated variables and the separate math derivation artifact `math_derivations.md`. Check if the 20% CVaR threshold defined in the constraints aligns with your risk tolerance.
+> Please review the updated variables and the separate math derivation artifact `math_derivations.md`. Check if the 10% CVaR threshold defined in the constraints aligns with your risk tolerance.
 
 ## Proposed System Architecture
 
