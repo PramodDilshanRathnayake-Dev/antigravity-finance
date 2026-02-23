@@ -2,24 +2,35 @@ package com.antigravity.agents.trade;
 
 import com.antigravity.agents.BaseAgent;
 import com.antigravity.config.KafkaConfig;
+import com.antigravity.models.Trade;
+import com.antigravity.models.TradeRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
+import java.math.BigDecimal;
 
 @Service
 public class TradeAgent extends BaseAgent {
 
     private static final Logger log = LoggerFactory.getLogger(TradeAgent.class);
     private final KafkaTemplate<String, String> kafkaTemplate;
+    private final TradeRepository tradeRepository;
 
-    public TradeAgent(ChatClient.Builder chatClientBuilder, KafkaTemplate<String, String> kafkaTemplate) {
+    public TradeAgent(ChatClient.Builder chatClientBuilder, KafkaTemplate<String, String> kafkaTemplate,
+            TradeRepository tradeRepository) {
         // Trade Agent specifically requires function calling capabilities bound to
         // 'VerifyCapitalConstraint'
         super(chatClientBuilder.defaultFunctions("verifyCapitalConstraint"), "TradeAgent");
         this.kafkaTemplate = kafkaTemplate;
+        this.tradeRepository = tradeRepository;
+    }
+
+    public record TradeDecision(String assetId, String action, BigDecimal amountAllocated, BigDecimal executionPrice,
+            String strategyUsed, BigDecimal cvarExposure) {
     }
 
     @KafkaListener(topics = KafkaConfig.TOPIC_MARKET_HEALTH, groupId = "antigravity-agents")
@@ -32,20 +43,38 @@ public class TradeAgent extends BaseAgent {
                 A market health event has just occurred. You represent the core strategy execution for LocalMarket assets.
                 You are strictly forbidden from placing a trade without FIRST invoking the verifyCapitalConstraint tool.
                 If the verification tool denies the allocation, you MUST output a log explaining the denial and abort.
-                If approved, output the JSON structure for the trade.execution.logs topic.
+                If approved, decide on the appropriate trade details.
                 """;
+
+        BeanOutputConverter<TradeDecision> converter = new BeanOutputConverter<>(TradeDecision.class);
+        String formatRequired = converter.getFormat();
 
         try {
             String aiResponse = this.chatClient.prompt()
-                    .system(systemPrompt)
+                    .system(s -> s.text(systemPrompt + "\n\n{format}").param("format", formatRequired))
                     .user("Market Event: \n" + marketHealthJson)
                     .call()
                     .content();
 
-            log.info("[TradeAgent] AI Reasoning Output: {}", aiResponse);
+            log.info("[TradeAgent] Reasoning completed. Parsing structured output if trade was approved.");
 
-            // In a full implementation, parser logic converts the AI JSON text block and
-            // pushes to Kafka TOPIC_TRADE_LOGS.
+            if (aiResponse != null && aiResponse.contains("assetId") && !aiResponse.contains("DENIED")) {
+                TradeDecision decision = converter.convert(aiResponse);
+
+                Trade tradeRecord = new Trade(
+                        decision.assetId(),
+                        decision.action(),
+                        decision.amountAllocated(),
+                        decision.executionPrice(),
+                        decision.strategyUsed(),
+                        decision.cvarExposure());
+
+                tradeRepository.save(tradeRecord);
+                kafkaTemplate.send(KafkaConfig.TOPIC_TRADE_LOGS, aiResponse);
+                log.info("[TradeAgent] Trade successfully persisted and broadcast to Kafka.");
+            } else {
+                log.warn("[TradeAgent] Non-trading decision reached. Potentially bounded by Capital Constraint.");
+            }
 
         } catch (Exception e) {
             log.error("[TradeAgent] Reasoning engine failed. Defaulting to safe passive posture.", e);

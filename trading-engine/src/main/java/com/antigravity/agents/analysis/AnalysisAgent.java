@@ -8,6 +8,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 
 @Service
 public class AnalysisAgent extends BaseAgent {
@@ -15,19 +16,21 @@ public class AnalysisAgent extends BaseAgent {
     private static final Logger log = LoggerFactory.getLogger(AnalysisAgent.class);
     private final KafkaTemplate<String, String> kafkaTemplate;
 
+    @Value("${antigravity.api.localmarket.url}")
+    private String localMarketEndpoint;
+
     public AnalysisAgent(ChatClient.Builder chatClientBuilder, KafkaTemplate<String, String> kafkaTemplate) {
         super(chatClientBuilder, "AnalysisAgent");
         this.kafkaTemplate = kafkaTemplate;
     }
 
     /**
-     * Simulated scheduled poll of the LocalMarket backend.
-     * In reality, this would connect via WebSockets or REST to the external Broker
-     * Gateway.
+     * Scheduled poll of the LocalMarket backend using the configured URL.
+     * Time bounded by antigravity.agent.analysis.poll-rate-ms
      */
-    // @Scheduled(fixedRate = 60000)
+    @Scheduled(fixedRateString = "${antigravity.agent.analysis.poll-rate-ms:60000}")
     public void evaluateMarket() {
-        log.info("[AnalysisAgent] Evaluating Local Market Data...");
+        log.info("[AnalysisAgent] Evaluating Local Market Data at {}", localMarketEndpoint);
 
         String prompt = "Generate a JSON payload simulating a LocalMarket bullish shift detected via volume indicators. Use the format specified in Phase 2 for market.analysis.health.";
 
