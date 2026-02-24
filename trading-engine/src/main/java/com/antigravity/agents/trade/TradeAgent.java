@@ -62,6 +62,7 @@ public class TradeAgent extends BaseAgent {
                 TradeDecision decision = converter.convert(aiResponse);
 
                 Trade tradeRecord = new Trade(
+                        "usr_001", // MVP: Single user system
                         decision.assetId(),
                         decision.action(),
                         decision.amountAllocated(),

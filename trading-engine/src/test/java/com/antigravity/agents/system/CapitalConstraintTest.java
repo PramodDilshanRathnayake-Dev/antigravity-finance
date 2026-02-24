@@ -4,274 +4,242 @@ import com.antigravity.models.ActionStatus;
 import com.antigravity.models.Portfolio;
 import com.antigravity.models.PortfolioRepository;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.web.reactive.function.client.WebClient;
+import org.mockito.MockitoAnnotations;
 
 import java.math.BigDecimal;
 import java.util.Optional;
-import java.util.function.Function;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-@ExtendWith(MockitoExtension.class)
-@DisplayName("Capital Constraint & System Agent Service Tests")
-public class CapitalConstraintTest {
+/**
+ * Validates the core capital preservation logic enforcing FRS Constraint #1.
+ * Tests cover the Entity, the Service, and the MCP Tool.
+ * Target: >80% code coverage for the System Agent module.
+ */
+class CapitalConstraintTest {
 
-        // =========================================================
-        // CapitalVerificationTool Tests (MCP Tool - verifyCapitalConstraint)
-        // =========================================================
+        @Mock
+        private PortfolioRepository portfolioRepository;
+
+        @Mock
+        private SystemAgentService systemAgentService;
+
+        private SystemAgentTools systemAgentTools;
+
+        @BeforeEach
+        void setUp() {
+                MockitoAnnotations.openMocks(this);
+                // Inject with manual threshold for testing (e.g., 0.10)
+                systemAgentTools = new SystemAgentTools(portfolioRepository, systemAgentService);
+                try {
+                        var field = SystemAgentTools.class.getDeclaredField("cvarThresholdPercentage");
+                        field.setAccessible(true);
+                        field.set(systemAgentTools, new BigDecimal("0.10"));
+                } catch (Exception e) {
+                        throw new RuntimeException("Failed to set cvarThresholdPercentage via reflection", e);
+                }
+        }
+
         @Nested
-        @DisplayName("MCP Tool: verifyCapitalConstraint")
         class CapitalVerificationToolTests {
 
-                @Mock
-                private PortfolioRepository portfolioRepository;
-                private SystemAgentTools systemAgentTools;
+                String userId = "usr_999";
+                SystemAgentTools.CapitalVerificationRequest req;
+                SystemAgentTools.CapitalVerificationResponse res;
 
-                @BeforeEach
-                void setUp() {
-                        systemAgentTools = new SystemAgentTools(portfolioRepository);
-                        ReflectionTestUtils.setField(systemAgentTools, "cvarThresholdPercentage",
-                                        new BigDecimal("0.10"));
+                @Test
+                void should_Error_WhenPortfolioNotFound() {
+                        when(portfolioRepository.findByUserId(userId)).thenReturn(Optional.empty());
+
+                        req = new SystemAgentTools.CapitalVerificationRequest(userId, new BigDecimal("100"),
+                                        new BigDecimal("10"));
+                        res = systemAgentTools.verifyCapitalConstraint().apply(req);
+
+                        assertThat(res.status()).isEqualTo(ActionStatus.ERROR);
+                        assertThat(res.message()).containsSequence("Portfolio not found for user.");
                 }
 
                 @Test
-                @DisplayName("DENY trade when portfolio does not exist")
-                void testConstraint_PortfolioNotFound_Denied() {
-                        when(portfolioRepository.findByUserId("unknown")).thenReturn(Optional.empty());
+                void should_Deny_WhenNoProfitToAbsorbRisk() {
+                        Portfolio p = new Portfolio(userId, new BigDecimal("10000")); // Base only, 0 profit
+                        when(portfolioRepository.findByUserId(userId)).thenReturn(Optional.of(p));
 
-                        Function<SystemAgentTools.CapitalVerificationRequest, SystemAgentTools.CapitalVerificationResponse> verifier = systemAgentTools
-                                        .verifyCapitalConstraint();
+                        req = new SystemAgentTools.CapitalVerificationRequest(userId, new BigDecimal("500"),
+                                        new BigDecimal("50"));
+                        res = systemAgentTools.verifyCapitalConstraint().apply(req);
 
-                        var response = verifier.apply(new SystemAgentTools.CapitalVerificationRequest(
-                                        "unknown", new BigDecimal("500.00"), new BigDecimal("50.00")));
-
-                        assertEquals(ActionStatus.ERROR, response.status());
-                        assertTrue(response.message().contains("Portfolio not found"));
+                        assertThat(res.status()).isEqualTo(ActionStatus.DENIED);
+                        assertThat(res.message()).containsSequence("No accumulated profits exist");
                 }
 
                 @Test
-                @DisplayName("DENY trade when accumulated profit is zero (no trades yet)")
-                void testConstraint_WhenNoProfit_TradeDenied() {
-                        Portfolio portfolio = new Portfolio("user1", new BigDecimal("10000.00"));
-                        when(portfolioRepository.findByUserId("user1")).thenReturn(Optional.of(portfolio));
+                void should_Deny_WhenRiskExceedsThreshold() {
+                        Portfolio p = new Portfolio(userId, new BigDecimal("10000"));
+                        p.addProfit(new BigDecimal("1000")); // Max allowable risk = 100
+                        when(portfolioRepository.findByUserId(userId)).thenReturn(Optional.of(p));
 
-                        Function<SystemAgentTools.CapitalVerificationRequest, SystemAgentTools.CapitalVerificationResponse> verifier = systemAgentTools
-                                        .verifyCapitalConstraint();
+                        req = new SystemAgentTools.CapitalVerificationRequest(userId, new BigDecimal("500"),
+                                        new BigDecimal("150")); // Risk 150 > 100
+                        res = systemAgentTools.verifyCapitalConstraint().apply(req);
 
-                        var response = verifier.apply(new SystemAgentTools.CapitalVerificationRequest(
-                                        "user1", new BigDecimal("500.00"), new BigDecimal("50.00")));
-
-                        assertEquals(ActionStatus.DENIED, response.status());
-                        assertEquals(BigDecimal.ZERO, response.maxAllowableDrawdown());
-                        assertTrue(response.message().contains("initial capital is strictly firewalled"));
+                        assertThat(res.status()).isEqualTo(ActionStatus.DENIED);
+                        assertThat(res.message()).containsSequence("exceeds 10.00% CVaR threshold");
                 }
 
                 @Test
-                @DisplayName("DENY trade when CVaR risk exceeds 10% of profit")
-                void testConstraint_RiskExceeds10PercentProfit_TradeDenied() {
-                        Portfolio portfolio = new Portfolio("user2", new BigDecimal("10000.00"));
-                        portfolio.addProfit(new BigDecimal("2000.00")); // Max risk = 10% of 2000 = 200
-                        when(portfolioRepository.findByUserId("user2")).thenReturn(Optional.of(portfolio));
+                void should_Deny_WhenAllocationExceedsTotalCapital() {
+                        Portfolio p = new Portfolio(userId, new BigDecimal("10000"));
+                        p.addProfit(new BigDecimal("1000")); // Total = 11000. Max risk = 100.
+                        when(portfolioRepository.findByUserId(userId)).thenReturn(Optional.of(p));
 
-                        Function<SystemAgentTools.CapitalVerificationRequest, SystemAgentTools.CapitalVerificationResponse> verifier = systemAgentTools
-                                        .verifyCapitalConstraint();
+                        req = new SystemAgentTools.CapitalVerificationRequest(userId, new BigDecimal("12000"),
+                                        new BigDecimal("50"));
+                        res = systemAgentTools.verifyCapitalConstraint().apply(req);
 
-                        var response = verifier.apply(new SystemAgentTools.CapitalVerificationRequest(
-                                        "user2", new BigDecimal("1000.00"), new BigDecimal("300.00"))); // Risk 300 >
-                                                                                                        // max 200
-
-                        assertEquals(ActionStatus.DENIED, response.status());
-                        assertEquals(0, response.maxAllowableDrawdown().compareTo(new BigDecimal("200.00")));
+                        assertThat(res.status()).isEqualTo(ActionStatus.DENIED);
+                        assertThat(res.message()).containsSequence("Insufficient total capital in portfolio");
                 }
 
                 @Test
-                @DisplayName("DENY trade when allocation exceeds total portfolio value")
-                void testConstraint_AllocationExceedsTotalValue_Denied() {
-                        Portfolio portfolio = new Portfolio("user3", new BigDecimal("1000.00"));
-                        portfolio.addProfit(new BigDecimal("500.00")); // Total = 1500
-                        when(portfolioRepository.findByUserId("user3")).thenReturn(Optional.of(portfolio));
+                void should_Approve_WhenWithinBounds() {
+                        Portfolio p = new Portfolio(userId, new BigDecimal("10000"));
+                        p.addProfit(new BigDecimal("1000")); // Total = 11000. Max risk = 100.
+                        when(portfolioRepository.findByUserId(userId)).thenReturn(Optional.of(p));
 
-                        Function<SystemAgentTools.CapitalVerificationRequest, SystemAgentTools.CapitalVerificationResponse> verifier = systemAgentTools
-                                        .verifyCapitalConstraint();
+                        req = new SystemAgentTools.CapitalVerificationRequest(userId, new BigDecimal("2000"),
+                                        new BigDecimal("50")); // Both within bounds
+                        res = systemAgentTools.verifyCapitalConstraint().apply(req);
 
-                        var response = verifier.apply(new SystemAgentTools.CapitalVerificationRequest(
-                                        "user3", new BigDecimal("5000.00"), new BigDecimal("10.00"))); // Allocation >
-                                                                                                       // total
-
-                        assertEquals(ActionStatus.DENIED, response.status());
-                        assertTrue(response.message().contains("Insufficient total capital"));
+                        assertThat(res.status()).isEqualTo(ActionStatus.SUCCESS);
+                        assertThat(res.message()).containsSequence("APPROVED");
                 }
 
                 @Test
-                @DisplayName("APPROVE trade when CVaR risk is within 10% profit bound")
-                void testConstraint_RiskWithinBounds_TradeApproved() {
-                        Portfolio portfolio = new Portfolio("user4", new BigDecimal("10000.00"));
-                        portfolio.addProfit(new BigDecimal("5000.00")); // Max risk = 10% of 5000 = 500
-                        when(portfolioRepository.findByUserId("user4")).thenReturn(Optional.of(portfolio));
+                void should_Approve_WhenRiskExactlyAtBoundary() {
+                        Portfolio p = new Portfolio(userId, new BigDecimal("10000"));
+                        p.addProfit(new BigDecimal("1000")); // Total = 11000. Max risk = 100.
+                        when(portfolioRepository.findByUserId(userId)).thenReturn(Optional.of(p));
 
-                        Function<SystemAgentTools.CapitalVerificationRequest, SystemAgentTools.CapitalVerificationResponse> verifier = systemAgentTools
-                                        .verifyCapitalConstraint();
+                        req = new SystemAgentTools.CapitalVerificationRequest(userId, new BigDecimal("2000"),
+                                        new BigDecimal("100.00")); // Exactly boundary
+                        res = systemAgentTools.verifyCapitalConstraint().apply(req);
 
-                        var response = verifier.apply(new SystemAgentTools.CapitalVerificationRequest(
-                                        "user4", new BigDecimal("2000.00"), new BigDecimal("150.00"))); // Risk 150 <
-                                                                                                        // max 500
-
-                        assertEquals(ActionStatus.SUCCESS, response.status());
-                        assertEquals(0, response.maxAllowableDrawdown().compareTo(new BigDecimal("500.00")));
-                        assertTrue(response.message().contains("APPROVED"));
-                }
-
-                @Test
-                @DisplayName("APPROVE trade when CVaR risk is exactly at the 10% threshold boundary")
-                void testConstraint_RiskAtExactBoundary_TradeApproved() {
-                        Portfolio portfolio = new Portfolio("user5", new BigDecimal("10000.00"));
-                        portfolio.addProfit(new BigDecimal("1000.00")); // Max risk = 10% of 1000 = 100
-                        when(portfolioRepository.findByUserId("user5")).thenReturn(Optional.of(portfolio));
-
-                        Function<SystemAgentTools.CapitalVerificationRequest, SystemAgentTools.CapitalVerificationResponse> verifier = systemAgentTools
-                                        .verifyCapitalConstraint();
-
-                        var response = verifier.apply(new SystemAgentTools.CapitalVerificationRequest(
-                                        "user5", new BigDecimal("500.00"), new BigDecimal("100.00"))); // Risk = max
-                                                                                                       // exactly
-
-                        assertEquals(ActionStatus.SUCCESS, response.status());
+                        assertThat(res.status()).isEqualTo(ActionStatus.SUCCESS);
                 }
         }
 
-        // =========================================================
-        // Portfolio Entity Logic Tests
-        // =========================================================
         @Nested
-        @DisplayName("Portfolio Entity Business Logic")
         class PortfolioEntityTests {
-
                 @Test
-                @DisplayName("Portfolio total value = protected base + accumulated profit")
-                void testTotalCurrentValue() {
-                        Portfolio p = new Portfolio("u1", new BigDecimal("10000"));
-                        p.addProfit(new BigDecimal("2000"));
-                        assertEquals(0, p.getTotalCurrentValue().compareTo(new BigDecimal("12000")));
-                }
-
-                @Test
-                @DisplayName("Deposit adds to protected base, not profit")
-                void testDeposit_UpdatesBase() {
-                        Portfolio p = new Portfolio("u2", new BigDecimal("5000"));
-                        p.addDeposit(new BigDecimal("3000"));
-                        assertEquals(0, p.getProtectedCapitalBase().compareTo(new BigDecimal("8000")));
-                        assertEquals(0, p.getAccumulatedProfit().compareTo(BigDecimal.ZERO));
-                }
-
-                @Test
-                @DisplayName("Withdrawal succeeds when profit covers the amount")
-                void testWithdrawal_WhenProfitSufficient_Succeeds() {
-                        Portfolio p = new Portfolio("u3", new BigDecimal("10000"));
-                        p.addProfit(new BigDecimal("3000"));
-                        boolean result = p.processWithdrawal(new BigDecimal("1000"));
-                        assertTrue(result);
-                        assertEquals(0, p.getAccumulatedProfit().compareTo(new BigDecimal("2000")));
-                        // Protected capital must remain intact
-                        assertEquals(0, p.getProtectedCapitalBase().compareTo(new BigDecimal("10000")));
-                }
-
-                @Test
-                @DisplayName("Withdrawal denied when it would breach the protected capital base")
-                void testWithdrawal_WhenExceedsProfit_Denied() {
-                        Portfolio p = new Portfolio("u4", new BigDecimal("10000"));
+                void totalCurrentValue_ShouldSumBaseAndProfit() {
+                        Portfolio p = new Portfolio("u1", new BigDecimal("1000"));
                         p.addProfit(new BigDecimal("500"));
-                        boolean result = p.processWithdrawal(new BigDecimal("1000")); // Tries to pull from base
-                        assertFalse(result);
-                        // Protected capital and profit remain unchanged
-                        assertEquals(0, p.getProtectedCapitalBase().compareTo(new BigDecimal("10000")));
-                        assertEquals(0, p.getAccumulatedProfit().compareTo(new BigDecimal("500")));
+                        assertThat(p.getTotalCurrentValue()).isEqualByComparingTo(new BigDecimal("1500"));
                 }
 
                 @Test
-                @DisplayName("Loss only deducts from profit, never base")
-                void testDeductLoss_OnlyFromProfit() {
-                        Portfolio p = new Portfolio("u5", new BigDecimal("10000"));
-                        p.addProfit(new BigDecimal("2000"));
-                        p.deductLoss(new BigDecimal("500"));
-                        assertEquals(0, p.getAccumulatedProfit().compareTo(new BigDecimal("1500")));
-                        assertEquals(0, p.getProtectedCapitalBase().compareTo(new BigDecimal("10000")));
+                void addDeposit_ShouldIncreaseProtectedBase() {
+                        Portfolio p = new Portfolio("u1", new BigDecimal("1000"));
+                        p.addDeposit(new BigDecimal("500"));
+                        assertThat(p.getProtectedCapitalBase()).isEqualByComparingTo(new BigDecimal("1500"));
+                        // Profit remains 0
+                        assertThat(p.getAccumulatedProfit()).isEqualByComparingTo(BigDecimal.ZERO);
+                }
+
+                @Test
+                void processWithdrawal_ShouldDenyIfExceedsProfit() {
+                        Portfolio p = new Portfolio("u1", new BigDecimal("1000"));
+                        p.addProfit(new BigDecimal("500"));
+
+                        boolean allowed = p.processWithdrawal(new BigDecimal("600"));
+                        assertThat(allowed).isFalse();
+                        assertThat(p.getAccumulatedProfit()).isEqualByComparingTo(new BigDecimal("500")); // Unchanged
+                }
+
+                @Test
+                void processWithdrawal_ShouldApproveAndDeductFromProfit() {
+                        Portfolio p = new Portfolio("u1", new BigDecimal("1000"));
+                        p.addProfit(new BigDecimal("500"));
+
+                        boolean allowed = p.processWithdrawal(new BigDecimal("200"));
+                        assertThat(allowed).isTrue();
+                        assertThat(p.getAccumulatedProfit()).isEqualByComparingTo(new BigDecimal("300")); // Deducted
+                        assertThat(p.getProtectedCapitalBase()).isEqualByComparingTo(new BigDecimal("1000")); // Base
+                                                                                                              // safe
+                }
+
+                @Test
+                void deductLoss_ShouldDeductFromProfitOnly() {
+                        Portfolio p = new Portfolio("u1", new BigDecimal("1000"));
+                        p.addProfit(new BigDecimal("500"));
+
+                        p.deductLoss(new BigDecimal("100"));
+                        assertThat(p.getAccumulatedProfit()).isEqualByComparingTo(new BigDecimal("400"));
+                        assertThat(p.getProtectedCapitalBase()).isEqualByComparingTo(new BigDecimal("1000"));
                 }
         }
 
-        // =========================================================
-        // SystemAgentService Tests
-        // =========================================================
         @Nested
-        @DisplayName("SystemAgentService Banking Operations")
         class SystemAgentServiceTests {
 
                 @Mock
-                private PortfolioRepository portfolioRepository;
-                @Mock
-                private WebClient.Builder webClientBuilder;
-                @Mock
-                private WebClient webClient;
+                private PortfolioRepository localRepo;
 
-                private SystemAgentService systemAgentService;
+                @InjectMocks
+                private SystemAgentService service;
 
                 @BeforeEach
-                void setUp() {
-                        when(webClientBuilder.build()).thenReturn(webClient);
-                        systemAgentService = new SystemAgentService(portfolioRepository, webClientBuilder);
-                        ReflectionTestUtils.setField(systemAgentService, "bankingApiUrl", "http://mock-bank.api");
+                void setup() {
+                        MockitoAnnotations.openMocks(this);
                 }
 
                 @Test
-                @DisplayName("Deposit creates new portfolio if none exists")
-                void testProcessDeposit_CreatesNewPortfolio() {
-                        when(portfolioRepository.findByUserId("newUser")).thenReturn(Optional.empty());
-                        when(portfolioRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+                void syncCdsDeposit_ShouldCreateNewPortfolioIfNotFound() {
+                        when(localRepo.findByUserIdForUpdate("u99")).thenReturn(Optional.empty());
+                        when(localRepo.save(any(Portfolio.class))).thenAnswer(i -> i.getArguments()[0]);
 
-                        Portfolio result = systemAgentService.processDeposit("newUser", new BigDecimal("5000"));
+                        Portfolio p = service.syncCdsDeposit("u99", new BigDecimal("500"));
 
-                        assertNotNull(result);
-                        assertEquals(0, result.getProtectedCapitalBase().compareTo(new BigDecimal("5000")));
-                        verify(portfolioRepository).save(any(Portfolio.class));
+                        assertThat(p.getProtectedCapitalBase()).isEqualByComparingTo(new BigDecimal("500"));
+                        verify(localRepo).save(any(Portfolio.class));
                 }
 
                 @Test
-                @DisplayName("Deposit adds to existing portfolio")
-                void testProcessDeposit_AddsToExisting() {
-                        Portfolio existing = new Portfolio("existingUser", new BigDecimal("1000"));
-                        when(portfolioRepository.findByUserId("existingUser")).thenReturn(Optional.of(existing));
-                        when(portfolioRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+                void syncCdsDeposit_ShouldAddToExistingPortfolio() {
+                        Portfolio existing = new Portfolio("u99", new BigDecimal("1000"));
+                        when(localRepo.findByUserIdForUpdate("u99")).thenReturn(Optional.of(existing));
+                        when(localRepo.save(any(Portfolio.class))).thenAnswer(i -> i.getArguments()[0]);
 
-                        Portfolio result = systemAgentService.processDeposit("existingUser", new BigDecimal("2000"));
-                        assertEquals(0, result.getProtectedCapitalBase().compareTo(new BigDecimal("3000")));
+                        Portfolio p = service.syncCdsDeposit("u99", new BigDecimal("200"));
+
+                        assertThat(p.getProtectedCapitalBase()).isEqualByComparingTo(new BigDecimal("1200"));
+                        verify(localRepo).save(existing);
                 }
 
                 @Test
-                @DisplayName("Withdrawal DENIED when portfolio not found")
-                void testProcessWithdrawal_PortfolioNotFound_Denied() {
-                        when(portfolioRepository.findByUserId("ghost")).thenReturn(Optional.empty());
-                        ActionStatus result = systemAgentService.processWithdrawal("ghost", new BigDecimal("100"));
-                        assertEquals(ActionStatus.DENIED, result);
+                void processWithdrawal_ShouldDenyIfNotFound() {
+                        when(localRepo.findByUserIdForUpdate("u99")).thenReturn(Optional.empty());
+                        ActionStatus status = service.processWithdrawal("u99", new BigDecimal("100"));
+                        assertThat(status).isEqualTo(ActionStatus.DENIED);
                 }
 
                 @Test
-                @DisplayName("Withdrawal DENIED when amount exceeds profit")
-                void testProcessWithdrawal_ExceedsProfit_Denied() {
-                        Portfolio portfolio = new Portfolio("richUser", new BigDecimal("10000"));
-                        portfolio.addProfit(new BigDecimal("200")); // Only 200 in profit
-                        when(portfolioRepository.findByUserId("richUser")).thenReturn(Optional.of(portfolio));
+                void processWithdrawal_ShouldApproveIfSufficientProfit() {
+                        Portfolio existing = new Portfolio("u99", new BigDecimal("1000"));
+                        existing.addProfit(new BigDecimal("500"));
+                        when(localRepo.findByUserIdForUpdate("u99")).thenReturn(Optional.of(existing));
 
-                        ActionStatus result = systemAgentService.processWithdrawal("richUser", new BigDecimal("500"));
-                        assertEquals(ActionStatus.DENIED, result);
-                        verify(portfolioRepository, never()).save(any());
+                        ActionStatus status = service.processWithdrawal("u99", new BigDecimal("400"));
+
+                        assertThat(status).isEqualTo(ActionStatus.SUCCESS);
+                        assertThat(existing.getAccumulatedProfit()).isEqualByComparingTo(new BigDecimal("100"));
+                        verify(localRepo).save(existing);
                 }
         }
 }

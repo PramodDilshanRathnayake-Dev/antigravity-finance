@@ -14,6 +14,9 @@ public class Trade {
     private UUID id;
 
     @Column(nullable = false)
+    private String userId;
+
+    @Column(nullable = false)
     private String assetId;
 
     @Column(nullable = false)
@@ -33,11 +36,14 @@ public class Trade {
 
     // Risk threshold used at the moment of trade
     @Column(nullable = false)
-    private BigDecimal cvarExposure; 
+    private BigDecimal cvarExposure;
 
-    public Trade() {}
+    public Trade() {
+    }
 
-    public Trade(String assetId, String action, BigDecimal amountAllocated, BigDecimal executionPrice, String strategyUsed, BigDecimal cvarExposure) {
+    public Trade(String userId, String assetId, String action, BigDecimal amountAllocated, BigDecimal executionPrice,
+            String strategyUsed, BigDecimal cvarExposure) {
+        this.userId = userId;
         this.assetId = assetId;
         this.action = action;
         this.amountAllocated = amountAllocated;
@@ -48,12 +54,39 @@ public class Trade {
     }
 
     // Getters
-    public UUID getId() { return id; }
-    public String getAssetId() { return assetId; }
-    public String getAction() { return action; }
-    public BigDecimal getAmountAllocated() { return amountAllocated; }
-    public BigDecimal getExecutionPrice() { return executionPrice; }
-    public LocalDateTime getTimestamp() { return timestamp; }
-    public String getStrategyUsed() { return strategyUsed; }
-    public BigDecimal getCvarExposure() { return cvarExposure; }
+    public UUID getId() {
+        return id;
+    }
+
+    public String getUserId() {
+        return userId;
+    }
+
+    public String getAssetId() {
+        return assetId;
+    }
+
+    public String getAction() {
+        return action;
+    }
+
+    public BigDecimal getAmountAllocated() {
+        return amountAllocated;
+    }
+
+    public BigDecimal getExecutionPrice() {
+        return executionPrice;
+    }
+
+    public LocalDateTime getTimestamp() {
+        return timestamp;
+    }
+
+    public String getStrategyUsed() {
+        return strategyUsed;
+    }
+
+    public BigDecimal getCvarExposure() {
+        return cvarExposure;
+    }
 }

@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #0f172a; /* slate-900 */
+    --foreground: #f8fafc; /* slate-50 */
+    --accent-glow: rgba(56, 189, 248, 0.15); /* light blue glow */
+    --glass-bg: rgba(30, 41, 59, 0.6); /* slate-800 with opacity */
+    --glass-border: rgba(255, 255, 255, 0.08); /* subtle white border */
+    --primary: #38bdf8; /* sky-400 */
+    --success: #34d399; /* emerald-400 */
+    --danger: #fb7185; /* rose-400 */
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    border-radius: 1rem;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+  }
+
+  .text-glow {
+    text-shadow: 0 0 10px var(--accent-glow);
+  }
+
+  .animated-gradient-bg {
+    background: radial-gradient(circle at top left, rgba(56, 189, 248, 0.15), transparent 40%),
+                radial-gradient(circle at bottom right, rgba(168, 85, 247, 0.15), transparent 40%);
+    background-size: 200% 200%;
+    animation: gradientMove 10s ease infinite;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: -1;
+  }
+}
+
+@keyframes gradientMove {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}

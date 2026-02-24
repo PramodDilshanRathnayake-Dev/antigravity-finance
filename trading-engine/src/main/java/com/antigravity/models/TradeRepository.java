@@ -8,4 +8,6 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface TradeRepository extends JpaRepository<Trade, UUID> {
     List<Trade> findByAssetId(String assetId);
+
+    List<Trade> findByUserIdOrderByTimestampDesc(String userId);
 }
