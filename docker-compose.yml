@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # --- Infrastructure ---
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: antigravity-postgres
+    environment:
+      POSTGRES_DB: trading_engine
+      POSTGRES_USER: antigravity
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U antigravity -d trading_engine" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: antigravity-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: antigravity-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  # --- Sandbox Broker (Local Paper Trading) ---
+
+  sandbox-broker:
+    image: ghcr.io/open-agent-tools/open-paper-trading-mcp:latest
+    container_name: antigravity-sandbox
+    ports:
+      - "8090:8090"
+    environment:
+      - APP_PORT=8090
+      - INITIAL_BALANCE=1000000
+
+  # --- Antigravity Applications ---
+
+  trading-engine:
+    build:
+      context: ./trading-engine
+      dockerfile: Dockerfile
+    container_name: antigravity-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/trading_engine
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTIGRAVITY_API_LOCALMARKET_URL=http://sandbox-broker:8090/v1
+      - ANTIGRAVITY_API_SANDBOX_BROKER_URL=http://sandbox-broker:8090
+    restart: on-failure
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    container_name: antigravity-ui
+    depends_on:
+      - trading-engine
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
+    restart: on-failure
+
+volumes:
+  postgres_data:

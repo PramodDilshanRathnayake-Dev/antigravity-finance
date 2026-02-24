@@ -54,7 +54,7 @@ public class ObserverAgent extends BaseAgent {
                   "origin_agent": "<agent name if identifiable, else 'unknown'>"
                 }
                 Rules:
-                - Deduct from confidence if Azure, GCP, non-AWS, or non-LocalMarket references are found.
+                - Deduct from confidence if Azure, AWS, non-GCP, or non-LocalMarket references are found.
                 - Deduct from confidence if capital constraint logic appears missing or incorrect.
                 - A confidence_score below 0.85 must set hallucination_detected to true.
                 """;

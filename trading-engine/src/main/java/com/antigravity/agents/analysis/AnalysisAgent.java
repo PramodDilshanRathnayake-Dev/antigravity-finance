@@ -42,12 +42,21 @@ public class AnalysisAgent extends BaseAgent {
      */
     @Scheduled(fixedRateString = "${antigravity.agent.analysis.poll-rate-ms:60000}")
     public void evaluateMarket() {
-        log.info("[AnalysisAgent] Starting market evaluation cycle. Endpoint={}", localMarketEndpoint);
-
+        log.info("[AnalysisAgent] Starting scheduled market evaluation cycle.");
         try {
-            // Fetch real market data from configured endpoint
             Map<String, Object> rawData = localMarketApiClient.fetchLatestMarketData("LOCAL_INDEX_1");
-            log.debug("[AnalysisAgent] Raw market data fetched: {}", rawData);
+            processMarketData(rawData.toString());
+        } catch (Exception e) {
+            log.error("[AnalysisAgent] Market evaluation cycle failed.", e);
+        }
+    }
+
+    /**
+     * Public entry point for simulation mode.
+     */
+    public void processMarketData(String rawDataString) {
+        log.debug("[AnalysisAgent] Processing market block: {}", rawDataString);
+        try {
 
             String systemPrompt = """
                     You are the Antigravity Analysis Agent.
@@ -69,7 +78,7 @@ public class AnalysisAgent extends BaseAgent {
 
             String eventPayload = this.chatClient.prompt()
                     .system(systemPrompt)
-                    .user("Raw LocalMarket Data: " + rawData)
+                    .user("Raw LocalMarket Data: " + rawDataString)
                     .call()
                     .content();
 

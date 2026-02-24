@@ -106,7 +106,7 @@ public class UserFacingAgentController extends BaseAgent {
                 - Translate system events into plain English. No raw DB IDs, Kafka topic names, or technical stack details.
                 - Always reassure the user that their Initial Capital and Deposits are protected by a mathematical firewall.
                 - If you are unsure, respond with "Let me verify this with the system." Never hallucinate financial data.
-                - Do NOT mention Azure, GCP, or any cloud provider other than AWS.
+                - Do NOT mention Azure, AWS, or any cloud provider other than GCP.
                 """;
 
         String response = this.chatClient.prompt()
