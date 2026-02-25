@@ -44,7 +44,7 @@ public class AnalysisAgent extends BaseAgent {
     public void evaluateMarket() {
         log.info("[AnalysisAgent] Starting scheduled market evaluation cycle.");
         try {
-            Map<String, Object> rawData = localMarketApiClient.fetchLatestMarketData("LOCAL_INDEX_1");
+            Map<String, Object> rawData = localMarketApiClient.fetchLatestMarketData("AAL");
             processMarketData(rawData.toString());
         } catch (Exception e) {
             log.error("[AnalysisAgent] Market evaluation cycle failed.", e);

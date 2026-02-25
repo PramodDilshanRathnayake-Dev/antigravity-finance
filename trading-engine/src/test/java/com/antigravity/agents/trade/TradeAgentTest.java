@@ -53,7 +53,7 @@ class TradeAgentTest {
         when(requestSpec.user(anyString())).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(responseSpec);
 
-        tradeAgent = new TradeAgent(chatClientBuilder, kafkaTemplate, tradeRepository);
+        tradeAgent = new TradeAgent(chatClientBuilder, kafkaTemplate, tradeRepository, mock(SandboxBrokerClient.class));
     }
 
     @Test

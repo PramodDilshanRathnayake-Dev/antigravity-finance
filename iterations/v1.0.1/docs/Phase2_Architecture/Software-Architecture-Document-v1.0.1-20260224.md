@@ -220,9 +220,9 @@ The **Colombo Stock Exchange (CSE) does not provide an official free sandbox or 
 | MCP Support | Native — directly compatible with Spring AI MCP tool calling |
 
 ### Integration Architecture
-- `open-paper-trading-mcp` runs as service `sandbox-broker` in `docker-compose.yml` on port `8090`
-- `LocalMarketApiClient` points to `http://sandbox-broker:8090` in local profile
-- `TradeAgent` sends BUY/SELL to `http://sandbox-broker:8090/v1/orders`
+- `open-paper-trading-mcp` runs as service `sandbox-broker` in `docker-compose.yml` on internal port `2080` (mapped to `8090` for host access)
+- `LocalMarketApiClient` points to `http://sandbox-broker:2080/api/v1/trading` in local profile
+- `TradeAgent` sends BUY/SELL to `http://sandbox-broker:2080/api/v1/trading/orders`
 - Real-world CSE asset prices loaded via `yfinance` using CSE stock ticker equivalents or NIKKEI/BSE patterns for simulation realism
 - On AWS: replaced with real CSE broker API endpoint (e.g., Arreya or future official CSE API)
 

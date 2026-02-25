@@ -37,7 +37,7 @@ public class LocalMarketApiClient {
 
         try {
             String response = webClient.get()
-                    .uri(localMarketBaseUrl + "/assets/{assetId}/quote", assetId)
+                    .uri(localMarketBaseUrl + "/stock/price/{assetId}", assetId)
                     .retrieve()
                     .bodyToMono(String.class)
                     .block();
@@ -48,9 +48,11 @@ public class LocalMarketApiClient {
                 return Collections.emptyMap();
             }
 
-            Map<String, Object> data = objectMapper.readValue(response, new TypeReference<>() {
+            Map<String, Object> root = objectMapper.readValue(response, new TypeReference<>() {
             });
-            log.debug("[LocalMarketApiClient] Data received for assetId={}: {}", assetId, data);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> data = (Map<String, Object>) root.getOrDefault("price_data", Collections.emptyMap());
+            log.debug("[LocalMarketApiClient] Price data extracted for assetId={}: {}", assetId, data);
             return data;
 
         } catch (Exception e) {

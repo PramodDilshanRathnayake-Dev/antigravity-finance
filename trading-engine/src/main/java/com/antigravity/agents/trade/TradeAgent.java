@@ -12,6 +12,7 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 @Service
 public class TradeAgent extends BaseAgent {
@@ -19,14 +20,16 @@ public class TradeAgent extends BaseAgent {
     private static final Logger log = LoggerFactory.getLogger(TradeAgent.class);
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final TradeRepository tradeRepository;
+    private final SandboxBrokerClient sandboxBrokerClient;
 
     public TradeAgent(ChatClient.Builder chatClientBuilder, KafkaTemplate<String, String> kafkaTemplate,
-            TradeRepository tradeRepository) {
+            TradeRepository tradeRepository, SandboxBrokerClient sandboxBrokerClient) {
         // Trade Agent specifically requires function calling capabilities bound to
         // 'VerifyCapitalConstraint'
         super(chatClientBuilder.defaultFunctions("verifyCapitalConstraint"), "TradeAgent");
         this.kafkaTemplate = kafkaTemplate;
         this.tradeRepository = tradeRepository;
+        this.sandboxBrokerClient = sandboxBrokerClient;
     }
 
     public record TradeDecision(String assetId, String action, BigDecimal amountAllocated, BigDecimal executionPrice,
@@ -71,6 +74,21 @@ public class TradeAgent extends BaseAgent {
                         decision.cvarExposure());
 
                 tradeRepository.save(tradeRecord);
+
+                // Execute order in sandbox
+                int quantity = decision.amountAllocated()
+                        .divide(decision.executionPrice(), 0, RoundingMode.FLOOR)
+                        .intValue();
+
+                if (quantity > 0) {
+                    log.info("[TradeAgent] Executing sandbox order: {} {} units", decision.action(), quantity);
+                    sandboxBrokerClient.placeOrder(decision.assetId(), decision.action(), quantity,
+                            decision.executionPrice());
+                } else {
+                    log.warn("[TradeAgent] Calculated quantity is 0 for amount={}. Skipping sandbox execution.",
+                            decision.amountAllocated());
+                }
+
                 kafkaTemplate.send(KafkaConfig.TOPIC_TRADE_LOGS, aiResponse);
                 log.info("[TradeAgent] Trade successfully persisted and broadcast to Kafka.");
             } else {
